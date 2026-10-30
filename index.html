@@ -1,0 +1,460 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1">
+
+  <title>GLTPカンファレンス受付</title>
+
+  <!-- QRコード読み取りライブラリ -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 18px;
+      background: #f5f6f8;
+      color: #222;
+    }
+
+    .container {
+      max-width: 480px;
+      margin: auto;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 23px;
+    }
+
+    .card {
+      background: white;
+      padding: 18px;
+      border-radius: 12px;
+      margin-top: 16px;
+      box-shadow: 0 2px 8px #0001;
+    }
+
+    #reader {
+      width: 100%;
+    }
+
+    #result {
+      display: none;
+      text-align: center;
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 16px;
+      background: white;
+    }
+
+    #result.success {
+      border: 3px solid #2e9d55;
+    }
+
+    #result.duplicate {
+      border: 3px solid #e0a020;
+    }
+
+    #result.error {
+      border: 3px solid #d9534f;
+    }
+
+    #result h2 {
+      font-size: 25px;
+    }
+
+    .message {
+      font-size: 19px;
+      font-weight: bold;
+    }
+
+    button {
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 8px;
+      background: #245ca6;
+      color: white;
+      font-size: 17px;
+      margin-top: 15px;
+    }
+
+    button:disabled {
+      background: #999;
+    }
+
+    .small {
+      color: #666;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+  <h1>GLTPカンファレンス受付</h1>
+
+  <div class="card">
+
+    <p>
+      参加者のQRコードをカメラにかざしてください。
+    </p>
+
+    <div id="reader"></div>
+
+    <button id="startButton"
+            onclick="startScanner()">
+      カメラを起動する
+    </button>
+
+    <p id="cameraStatus" class="small">
+      カメラの起動ボタンを押してください。
+    </p>
+
+  </div>
+
+
+  <div id="result">
+
+    <div id="resultMessage" class="message"></div>
+
+    <h2 id="participantName"></h2>
+
+    <p id="participantGrade"></p>
+
+    <p id="participantAffiliation"></p>
+
+    <p id="receptionDate"></p>
+
+    <button onclick="resumeScanner()">
+      次の参加者を読み取る
+    </button>
+
+  </div>
+
+</div>
+
+
+<script>
+
+// =====================================
+// 設定
+// =====================================
+
+// Apps ScriptのWebアプリURL
+const GAS_API_URL =
+  'https://script.google.com/macros/s/AKfycbxwbvwJ_8cgFU8hbqX24FLOTtDtgo2WyRFUByvn7_0JUGm8I61PuNJ0p9Ui4WWP98RJ/exec';
+
+let scanner = null;
+
+let processing = false;
+
+let requestTimer = null;
+
+let pendingScript = null;
+
+
+// =====================================
+// カメラ起動
+// =====================================
+
+async function startScanner() {
+
+  const status =
+    document.getElementById('cameraStatus');
+
+  const startButton =
+    document.getElementById('startButton');
+
+  try {
+
+    if (!window.isSecureContext) {
+      throw new Error(
+        'HTTPS環境ではありません。'
+      );
+    }
+
+    if (
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia
+    ) {
+      throw new Error(
+        'このブラウザではカメラを利用できません。'
+      );
+    }
+
+    status.textContent =
+      'カメラを起動しています。';
+
+    startButton.disabled = true;
+
+    scanner = new Html5Qrcode('reader');
+
+    await scanner.start(
+      { facingMode: 'environment' },
+      {
+        fps: 10,
+        qrbox: {
+          width: 230,
+          height: 230
+        }
+      },
+      onScanSuccess
+    );
+
+    status.textContent =
+      'QRコードを読み取っています。';
+
+    startButton.style.display = 'none';
+
+  } catch (error) {
+
+    console.error(
+      'Camera error:',
+      error
+    );
+
+    status.textContent =
+      'カメラを起動できませんでした。詳細：' +
+      (error.message || error);
+
+    startButton.disabled = false;
+
+  }
+
+}
+
+
+// =====================================
+// QRコード読み取り成功
+// =====================================
+
+async function onScanSuccess(decodedText) {
+
+  if (processing) return;
+
+  processing = true;
+
+  try {
+
+    await scanner.pause(true);
+
+  } catch (error) {
+
+    console.warn(error);
+
+  }
+
+  document.getElementById('cameraStatus')
+    .textContent = '受付処理中です...';
+
+  sendCheckInRequest(decodedText);
+
+}
+
+
+// =====================================
+// Apps Scriptへ受付情報を送信
+// JSONP方式
+// =====================================
+
+function sendCheckInRequest(token) {
+
+  // 前回の通信を整理
+  if (pendingScript) {
+    pendingScript.remove();
+    pendingScript = null;
+  }
+
+  clearTimeout(requestTimer);
+
+  const script = document.createElement('script');
+
+  const url =
+    GAS_API_URL +
+    '?action=checkIn&token=' +
+    encodeURIComponent(token) +
+    '&_=' + Date.now();
+
+  pendingScript = script;
+
+  // 通信エラー
+  script.onerror = function() {
+
+    clearPendingRequest();
+
+    showError(
+      'Apps Scriptとの通信に失敗しました。'
+    );
+
+  };
+
+  // 通信タイムアウト
+  requestTimer = setTimeout(function() {
+
+    clearPendingRequest();
+
+    showError(
+      '受付処理がタイムアウトしました。'
+    );
+
+  }, 15000);
+
+  script.src = url;
+
+  document.body.appendChild(script);
+
+}
+
+
+// =====================================
+// Apps Scriptからの応答
+// =====================================
+
+window.gltpReceptionCallback = function(data) {
+
+  clearPendingRequest();
+
+  showResult(data);
+
+};
+
+
+// =====================================
+// 通信の後片付け
+// =====================================
+
+function clearPendingRequest() {
+
+  clearTimeout(requestTimer);
+
+  if (pendingScript) {
+
+    pendingScript.remove();
+
+    pendingScript = null;
+
+  }
+
+}
+
+
+// =====================================
+// 受付結果表示
+// =====================================
+
+function showResult(data) {
+
+  const result =
+    document.getElementById('result');
+
+  result.style.display = 'block';
+
+  result.className = '';
+
+  document.getElementById('resultMessage')
+    .textContent = data.message || '';
+
+  document.getElementById('participantName')
+    .textContent = data.name || '';
+
+  document.getElementById('participantGrade')
+    .textContent = data.grade
+      ? '学年・職位：' + data.grade
+      : '';
+
+  document.getElementById('participantAffiliation')
+    .textContent = data.affiliation
+      ? '所属：' + data.affiliation
+      : '';
+
+  document.getElementById('receptionDate')
+    .textContent = data.receptionDate
+      ? '受付日時：' + data.receptionDate
+      : '';
+
+  if (!data.success) {
+
+    result.classList.add('error');
+
+  } else if (data.alreadyCheckedIn) {
+
+    result.classList.add('duplicate');
+
+  } else {
+
+    result.classList.add('success');
+
+  }
+
+}
+
+
+// =====================================
+// エラー表示
+// =====================================
+
+function showError(message) {
+
+  const result =
+    document.getElementById('result');
+
+  result.style.display = 'block';
+
+  result.className = 'error';
+
+  document.getElementById('resultMessage')
+    .textContent = message || 'エラーが発生しました。';
+
+}
+
+
+// =====================================
+// 次の参加者の読み取り
+// =====================================
+
+async function resumeScanner() {
+
+  document.getElementById('result')
+    .style.display = 'none';
+
+  processing = false;
+
+  try {
+
+    await scanner.resume();
+
+    document.getElementById('cameraStatus')
+      .textContent = '次のQRコードを読み取っています。';
+
+  } catch (error) {
+
+    console.error(
+      'Scanner resume error:',
+      error
+    );
+
+    document.getElementById('cameraStatus')
+      .textContent =
+      '読み取りを再開できません。ページを再読み込みしてください。';
+
+  }
+
+}
+
+</script>
+
+</body>
+</html>

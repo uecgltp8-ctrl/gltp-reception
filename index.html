@@ -272,11 +272,60 @@ async function onScanSuccess(decodedText) {
 
 function sendCheckInRequest(token) {
 
-  // 前回の通信を整理
   if (pendingScript) {
     pendingScript.remove();
     pendingScript = null;
   }
+
+  clearTimeout(requestTimer);
+
+  const script = document.createElement('script');
+
+  const url =
+    GAS_API_URL +
+    '?action=checkIn&token=' +
+    encodeURIComponent(token) +
+    '&_=' + Date.now();
+
+  pendingScript = script;
+
+  console.log('受付APIへの通信を開始します');
+
+  script.onerror = function(event) {
+
+    console.error('Apps Script通信エラー:', event);
+
+    clearPendingRequest();
+
+    showError(
+      'Apps Scriptとの通信に失敗しました。'
+    );
+
+  };
+
+  script.onload = function() {
+
+    console.log('Apps Scriptのスクリプトを読み込みました');
+
+  };
+
+  requestTimer = setTimeout(function() {
+
+    console.error('受付APIのタイムアウト');
+
+    clearPendingRequest();
+
+    showError(
+      '受付処理がタイムアウトしました。'
+    );
+
+  }, 15000);
+
+  script.src = url;
+
+  document.body.appendChild(script);
+
+}
 
   clearTimeout(requestTimer);
 

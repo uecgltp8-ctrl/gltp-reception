@@ -270,6 +270,12 @@ async function onScanSuccess(decodedText) {
 // JSONP方式
 // =====================================
 
+
+// =====================================
+// Apps Scriptへ受付情報を送信
+// JSONP方式
+// =====================================
+
 function sendCheckInRequest(token) {
 
   if (pendingScript) {
@@ -312,46 +318,6 @@ function sendCheckInRequest(token) {
   requestTimer = setTimeout(function() {
 
     console.error('受付APIのタイムアウト');
-
-    clearPendingRequest();
-
-    showError(
-      '受付処理がタイムアウトしました。'
-    );
-
-  }, 15000);
-
-  script.src = url;
-
-  document.body.appendChild(script);
-
-}
-
-  clearTimeout(requestTimer);
-
-  const script = document.createElement('script');
-
-  const url =
-    GAS_API_URL +
-    '?action=checkIn&token=' +
-    encodeURIComponent(token) +
-    '&_=' + Date.now();
-
-  pendingScript = script;
-
-  // 通信エラー
-  script.onerror = function() {
-
-    clearPendingRequest();
-
-    showError(
-      'Apps Scriptとの通信に失敗しました。'
-    );
-
-  };
-
-  // 通信タイムアウト
-  requestTimer = setTimeout(function() {
 
     clearPendingRequest();
 

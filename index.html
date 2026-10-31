@@ -298,22 +298,18 @@ function sendCheckInRequest(token) {
   console.log('受付APIへの通信を開始します');
 
   script.onerror = function(event) {
-
-    console.error('Apps Script通信エラー:', event);
+    console.error('JSONP script読み込みエラー');
+    console.error('URL:', script.src);
+    console.error('Event:', event);
 
     clearPendingRequest();
-
-    showError(
-      'Apps Scriptとの通信に失敗しました。'
-    );
-
+    showError('Apps Scriptとの通信に失敗しました。');
   };
 
   script.onload = function() {
-
-    console.log('Apps Scriptのスクリプトを読み込みました');
-
+    console.log('JSONP script読み込み完了');
   };
+
 
   requestTimer = setTimeout(function() {
 
